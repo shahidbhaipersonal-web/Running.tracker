@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Running Tracker</title>
+
+<style>
+:root{
+  --bg:#0f2027;
+  --card:rgba(255,255,255,0.1);
+  --text:white;
+}
+.light{
+  --bg:#f2f2f2;
+  --card:#ffffff;
+  --text:#111;
+}
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  text-align:center;
+}
+.container{
+  max-width:520px;
+  margin:auto;
+  padding:20px;
+}
+.card{
+  background:var(--card);
+  padding:15px;
+  margin:10px 0;
+  border-radius:12px;
+  font-size:18px;
+}
+button{
+  padding:10px 16px;
+  margin:6px;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+  font-size:15px;
+}
+.start{background:#27ae60;color:#fff;}
+.pause{background:#f39c12;color:#fff;}
+.reset{background:#e74c3c;color:#fff;}
+.toggle{background:#3498db;color:#fff;}
+.history{
+  text-align:left;
+  max-height:180px;
+  overflow:auto;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<h2>🏃 Running Tracker (GPS)</h2>
+
+<div class="card">⏱ Time: <span id="time">00:00:00</span></div>
+<div class="card">📏 Distance (GPS): <span id="distance">0.00</span> km</div>
+<div class="card">👣 Steps: <span id="steps">0</span></div>
+<div class="card">❤️ Heartbeat: <span id="heart">80</span> BPM</div>
+<div class="card">🔥 Calories: <span id="calories">0</span> kcal</div>
+
+<button class="start" onclick="startRun()">Start</button>
+<button class="pause" onclick="pauseRun()">Pause</button>
+<button class="reset" onclick="resetRun()">Reset</button>
+<button class="toggle" onclick="toggleMode()">🌙 Light/Dark</button>
+
+<h3>📅 Daily History</h3>
+<div class="card history" id="history"></div>
+</div>
+
+<script>
+let seconds=0;
+let timer=null;
+let watchId=null;
+
+let distance=0;
+let lastPos=null;
+let steps=0;
+let weight=60;
+
+// ---------- TIME ----------
+function formatTime(sec){
+ let h=Math.floor(sec/3600);
+ let m=Math.floor((sec%3600)/60);
+ let s=sec%60;
+ return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// ---------- START ----------
+function startRun(){
+ if(timer) return;
+
+ timer=setInterval(()=>{
+   seconds++;
+   document.getElementById("time").innerText=formatTime(seconds);
+
+   // heartbeat simulation
+   document.getElementById("heart").innerText=
+     80+Math.floor(Math.random()*40);
+
+   // calories estimate
+   let calories=distance*weight*1.036;
+   document.getElementById("calories").innerText=
+     Math.floor(calories);
+
+ },1000);
+
+ startGPS();
+}
+
+// ---------- PAUSE ----------
+function pauseRun(){
+ clearInterval(timer);
+ timer=null;
+ if(watchId) navigator.geolocation.clearWatch(watchId);
+}
+
+// ---------- RESET ----------
+function resetRun(){
+ pauseRun();
+ saveHistory();
+ seconds=0;
+ distance=0;
+ steps=0;
+ lastPos=null;
+
+ document.getElementById("time").innerText="00:00:00";
+ document.getElementById("distance").innerText="0.00";
+ document.getElementById("steps").innerText="0";
+ document.getElementById("calories").innerText="0";
+}
+
+// ---------- GPS DISTANCE ----------
+function startGPS(){
+ if(!navigator.geolocation) return;
+
+ watchId=navigator.geolocation.watchPosition(pos=>{
+   let lat=pos.coords.latitude;
+   let lon=pos.coords.longitude;
+
+   if(lastPos){
+     distance+=calcDistance(
+       lastPos.lat,lastPos.lon,lat,lon);
+     document.getElementById("distance")
+       .innerText=distance.toFixed(2);
+   }
+
+   lastPos={lat,lon};
+
+ },err=>console.log(err),
+ {enableHighAccuracy:true});
+}
+
+function calcDistance(lat1,lon1,lat2,lon2){
+ const R=6371;
+ const dLat=(lat2-lat1)*Math.PI/180;
+ const dLon=(lon2-lon1)*Math.PI/180;
+ const a=
+  Math.sin(dLat/2)**2+
+  Math.cos(lat1*Math.PI/180)*
+  Math.cos(lat2*Math.PI/180)*
+  Math.sin(dLon/2)**2;
+ const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+ return R*c;
+}
+
+// ---------- STEP COUNTER (MOBILE SENSOR) ----------
+if(window.DeviceMotionEvent){
+ window.addEventListener("devicemotion",e=>{
+   let acc=e.accelerationIncludingGravity;
+   if(!acc) return;
+   let total=Math.abs(acc.x)+Math.abs(acc.y)+Math.abs(acc.z);
+   if(total>30){
+     steps++;
+     document.getElementById("steps").innerText=steps;
+   }
+ });
+}
+
+// ---------- DARK / LIGHT ----------
+function toggleMode(){
+ document.body.classList.toggle("light");
+ localStorage.setItem("mode",
+   document.body.classList.contains("light")?"light":"dark");
+}
+if(localStorage.getItem("mode")==="light"){
+ document.body.classList.add("light");
+}
+
+// ---------- DAILY HISTORY ----------
+function saveHistory(){
+ if(distance<=0) return;
+
+ let today=new Date().toLocaleDateString();
+ let data=JSON.parse(localStorage.getItem("runs")||"[]");
+
+ data.push({
+   date:today,
+   distance:distance.toFixed(2),
+   time:formatTime(seconds),
+   steps:steps
+ });
+
+ localStorage.setItem("runs",JSON.stringify(data));
+ loadHistory();
+}
+
+function loadHistory(){
+ let data=JSON.parse(localStorage.getItem("runs")||"[]");
+ let html="";
+ data.slice().reverse().forEach(r=>{
+   html+=`<div>📅 ${r.date} — ${r.distance} km | ⏱ ${r.time} | 👣 ${r.steps}</div>`;
+ });
+ document.getElementById("history").innerHTML=html;
+}
+
+loadHistory();
+</script>
+
+</body>
+  </html>
